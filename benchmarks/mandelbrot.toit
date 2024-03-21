@@ -12,33 +12,59 @@
 
 // Using a Toit service to calculate the Mandelbrot set in parallel.
 
+import host.file
 import host.pipe
 import monitor
 import system.services show ServiceClient ServiceSelector ServiceResourceProxy
 import system.services show ServiceProvider ServiceHandler ServiceResource
 
+THREADS ::= 6
+
 // Takes a single argument, the width/height of the image.
 // Produces a PPM image of the Mandelbrot set on stdout.
 // The standard benchmark size is 16000 x 16000.
 main args/List:
-  spawn::
-    service := MandelbrotServiceProvider
-    service.install
-    service.uninstall --wait
-
-  client := MandelbrotServiceClient
-  client.open
-
-  h ::= args.size == 1 ? int.parse args[0] : 200
+  h ::= args.size >= 1 ? int.parse args[0] : 200
   w ::= h
 
-  print "P4\n$w $h"
-  out := pipe.stdout  
+  filename := args.size >= 2 ? args[1] : null
 
-  for y := 0; y < h; ++y:   
-    ci-init := 2.0 * y / h - 1.0
-    line := client.line ci-init 2.0 -1.5 w
-    out.write line
+  THREADS.repeat: | index |
+    spawn::
+      service := MandelbrotServiceProvider index
+      service.install
+      service.uninstall --wait
+
+  out := ?
+  if filename:
+    out = file.Stream.for-write filename
+  else:
+    out = pipe.stdout
+  out.write "P4\n$w $h\n"
+
+  calculated-y := 0
+
+  results := Map
+
+  THREADS.repeat: | index |
+    task::
+      client := null
+      while not client:
+        catch:
+          client = MandelbrotServiceClient index
+          client.open
+      while calculated-y < h:
+        my-y := calculated-y
+        calculated-y++
+        imaginary := 2.0 * my-y / h - 1.0
+        line := client.line imaginary 2.0 -1.5 w
+        results[my-y] = line
+
+  h.repeat: | y |
+    while not results.contains y:
+      sleep --ms=1
+    out.write results[y]
+    results.remove y
 
   out.close
 
@@ -53,18 +79,21 @@ interface MandelbrotService:
 
 class MandelbrotServiceClient extends ServiceClient implements MandelbrotService:
   static SELECTOR ::= MandelbrotService.SELECTOR
-  constructor selector/ServiceSelector=SELECTOR:
-    assert: selector.matches SELECTOR
-    super selector
+
+  constructor index/int:
+    selective-selector := MandelbrotService.SELECTOR.restrict.allow --tag="$index"
+    assert: selective-selector.matches SELECTOR
+    super selective-selector
 
   line imaginary/float scale/float offset/float width/int -> ByteArray:
     return invoke_ MandelbrotService.LINE-INDEX [imaginary, scale, offset, width]
 
 class MandelbrotServiceProvider extends ServiceProvider
     implements ServiceHandler:
-  constructor:
+
+  constructor index/int:
     super "benchmark/mandelbrot" --major=1 --minor=0
-    provides MandelbrotService.SELECTOR --handler=this
+    provides MandelbrotService.SELECTOR --handler=this --tags=["$index"]
 
   handle index/int arguments/any --gid/int --client/int -> any:
     if index == MandelbrotService.LINE-INDEX:
