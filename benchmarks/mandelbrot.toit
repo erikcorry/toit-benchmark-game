@@ -18,18 +18,19 @@ import monitor
 import system.services show ServiceClient ServiceSelector ServiceResourceProxy
 import system.services show ServiceProvider ServiceHandler ServiceResource
 
-THREADS ::= 6
+THREADS ::= 4
 
 // Takes a single argument, the width/height of the image.
 // Produces a PPM image of the Mandelbrot set on stdout.
 // The standard benchmark size is 16000 x 16000.
 main args/List:
-  h ::= args.size >= 1 ? int.parse args[0] : 200
+  h ::= args.size >= 1 ? int.parse args[0] : 1600
   w ::= h
 
   filename := args.size >= 2 ? args[1] : null
+  threads := args.size >= 3 ? (int.parse args[2]) : THREADS
 
-  THREADS.repeat: | index |
+  threads.repeat: | index |
     spawn::
       service := MandelbrotServiceProvider index
       service.install
@@ -44,25 +45,30 @@ main args/List:
 
   calculated-y := 0
 
+  channel := monitor.Channel 30
+
   results := Map
 
-  THREADS.repeat: | index |
+  threads.repeat: | index |
     task::
       client := null
       while not client:
         catch:
-          client = MandelbrotServiceClient index
-          client.open
+          c := MandelbrotServiceClient index
+          c.open --timeout=(Duration --s=30)
+          client = c
       while calculated-y < h:
         my-y := calculated-y
         calculated-y++
         imaginary := 2.0 * my-y / h - 1.0
         line := client.line imaginary 2.0 -1.5 w
-        results[my-y] = line
+        channel.send [my-y, line]
+      client.close
 
   h.repeat: | y |
     while not results.contains y:
-      sleep --ms=1
+      packet := channel.receive
+      results[packet[0]] = packet[1]
     out.write results[y]
     results.remove y
 
@@ -91,7 +97,9 @@ class MandelbrotServiceClient extends ServiceClient implements MandelbrotService
 class MandelbrotServiceProvider extends ServiceProvider
     implements ServiceHandler:
 
-  constructor index/int:
+  index/int
+
+  constructor .index/int:
     super "benchmark/mandelbrot" --major=1 --minor=0
     provides MandelbrotService.SELECTOR --handler=this --tags=["$index"]
 
@@ -101,6 +109,8 @@ class MandelbrotServiceProvider extends ServiceProvider
     unreachable
 
   line imaginary/float scale/float offset/float width/int -> ByteArray:
+    now := Time.monotonic-us
+
     ITER ::= 50
     LIMIT-SQUARED ::= 4.0
     result := ByteArray width >> 3
