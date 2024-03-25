@@ -51,12 +51,8 @@ main args/List:
 
   threads.repeat: | index |
     task::
-      client := null
-      while not client:
-        catch:
-          c := MandelbrotServiceClient index
-          c.open --timeout=(Duration --s=30)
-          client = c
+      client := MandelbrotServiceClient index
+      client.open --timeout=(Duration --s=30)
       while calculated-y < h:
         my-y := calculated-y
         calculated-y++
