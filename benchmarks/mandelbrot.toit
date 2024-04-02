@@ -37,8 +37,11 @@ main args/List:
   threads.repeat: | index |
     spawn::
       service := MandelbrotServiceProvider index
+      print_ "Service $index created"
       service.install
+      print_ "Service $index started"
       service.uninstall --wait
+      print_ "Service $index stopped"
 
   out := ?
   if filename:
@@ -55,8 +58,12 @@ main args/List:
 
   threads.repeat: | index |
     task::
-      client := MandelbrotServiceClient index
-      client.open --timeout=(Duration --s=30)
+      client := null
+      while not client:
+        catch --trace:
+          c := MandelbrotServiceClient index
+          c.open --timeout=(Duration --s=30)
+          client = c
       while calculated-y < h:
         my-y := calculated-y
         calculated-y++
@@ -65,10 +72,14 @@ main args/List:
         channel.send [my-y, line]
       client.close
 
+  print_ "Clients started"
+
   h.repeat: | y |
     while not results.contains y:
       packet := channel.receive
-      results[packet[0]] = packet[1]
+      y2 := packet[0]
+      print_ y2
+      results[y2] = packet[1]
     out.write results[y]
     results.remove y
 
@@ -110,6 +121,7 @@ class MandelbrotServiceProvider extends ServiceProvider
 
   line imaginary/float scale/float offset/float width/int -> ByteArray:
     now := Time.monotonic-us
+    print_ "Start calculating $imaginary"
 
     ITER ::= 50
     LIMIT-SQUARED ::= 4.0
@@ -132,4 +144,5 @@ class MandelbrotServiceProvider extends ServiceProvider
           
         if tr + ti <= 4.0:
           result[x1] |= 128 >> x2
+    print_ "Done calculating $imaginary"
     return result
