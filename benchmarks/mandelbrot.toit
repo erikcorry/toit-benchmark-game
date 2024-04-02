@@ -25,8 +25,8 @@ THREADS ::= 4
 // The standard benchmark size is 16000 x 16000.
 main args/List:
   if args.size < 1:
-    print "Usage: mandelbrot.toit <size> [<filename> [<threads>]]"
-    print "eg:    mandelbrot.toit 3000 out.ppm 8"
+    print "Usage: mandelbrot <size> [<filename> [<threads>]]"
+    print "eg:    mandelbrot 3000 out.ppm 8"
     return
   h ::= args.size >= 1 ? int.parse args[0] : 1600
   w ::= h
