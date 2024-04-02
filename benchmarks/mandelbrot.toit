@@ -24,6 +24,10 @@ THREADS ::= 4
 // Produces a PPM image of the Mandelbrot set on stdout.
 // The standard benchmark size is 16000 x 16000.
 main args/List:
+  if args.size < 1:
+    print "Usage: mandelbrot.toit <size> [<filename> [<threads>]]"
+    print "eg:    mandelbrot.toit 3000 out.ppm 8"
+    return
   h ::= args.size >= 1 ? int.parse args[0] : 1600
   w ::= h
 
